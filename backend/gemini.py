@@ -126,16 +126,23 @@ Return ONLY a valid JSON object with exactly these keys: "summary", "risks", "ex
 
 def extract_text_from_image(file_bytes: bytes, mime_type: str) -> str:
     print(f"[GEMINI] Extracting text from image ({mime_type})")
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[
-                "Extract all text from this image exactly as written. Do not add any extra commentary or formatting. If there is no text, just return an empty string.",
-                types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
-            ]
-        )
-        return response.text.strip()
-    except Exception as e:
-        print(f"[GEMINI ERROR] Image text extraction failed: {e}")
-        from fastapi import HTTPException
-        raise HTTPException(status_code=500, detail="Failed to extract text from image using AI.")
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    "Extract all text from this image exactly as written. Do not add any extra commentary or formatting. If there is no text, just return an empty string.",
+                    types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
+                ]
+            )
+            return response.text.strip()
+        except Exception as e:
+            print(f"[GEMINI ERROR] Attempt {attempt + 1}/{max_retries} - Image extraction failed: {e}")
+            if attempt < max_retries - 1:
+                # Exponential backoff: sleep for 2 seconds, then 4 seconds...
+                time.sleep(2 ** (attempt + 1)) 
+            else:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=500, detail="Failed to extract text from image due to high AI demand. Please try again in a few minutes.")
